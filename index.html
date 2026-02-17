@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>土地持分近似</title>
+    <style>
+      :root {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        line-height: 1.5;
+        background: #f0f2f5;
+        color: #1a1a1a;
+      }
+      h2 {
+        margin: 8px 0 16px;
+        font-size: 1.5rem;
+        text-align: center;
+      }
+      .card {
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: #fff;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+      }
+      .grid-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+      }
+      .input-group {
+        display: flex;
+        flex-direction: column;
+      }
+      label {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 8px;
+        font-weight: 600;
+      }
+      input {
+        padding: 14px;
+        border: 1px solid #ddd;
+        border-radius: 12px;
+        font-size: 16px;
+        -webkit-appearance: none;
+      }
+      input:focus {
+        border-color: #111;
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
+      }
+      .btn-row {
+        margin-top: 24px;
+        display: flex;
+        gap: 12px;
+      }
+      button {
+        flex: 1;
+        padding: 14px;
+        border: none;
+        background: #111;
+        color: #fff;
+        border-radius: 12px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 16px;
+      }
+      button.secondary {
+        background: #e4e6eb;
+        color: #1c1e21;
+        flex: 0.5;
+      }
+      .msg-box {
+        margin-top: 12px;
+        font-size: 14px;
+        text-align: center;
+        min-height: 20px;
+      }
+      .err {
+        color: #d32f2f;
+      }
+      .table-wrapper {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        border-radius: 8px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 600px;
+      }
+      th,
+      td {
+        border-bottom: 1px solid #f0f0f0;
+        padding: 14px 10px;
+        font-size: 14px;
+        text-align: right;
+        white-space: nowrap;
+      }
+      th {
+        background: #fafafa;
+        color: #888;
+        font-weight: 500;
+      }
+      td:first-child,
+      th:first-child {
+        text-align: left;
+        position: sticky;
+        left: 0;
+        background: #fff;
+      }
+      code {
+        background: #f0f2f5;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-family: ui-monospace, monospace;
+        font-weight: 700;
+        color: #000;
+      }
+      .highlight {
+        color: #2e7d32;
+        font-weight: 700;
+      }
+      .info-text {
+        font-size: 12px;
+        color: #999;
+        margin-bottom: 12px;
+        text-align: center;
+      }
+      @media (max-width: 480px) {
+        body {
+          padding: 12px;
+        }
+        .card {
+          padding: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h2>土地持分近似計算</h2>
+
+    <div class="card">
+      <div class="grid-container">
+        <div class="input-group">
+          <label>總面積 (Total)</label>
+          <input
+            id="total"
+            type="number"
+            inputmode="decimal"
+            step="any"
+            value="11459"
+          />
+        </div>
+        <div class="input-group">
+          <label>持有面積 (Owned)</label>
+          <input
+            id="owned"
+            type="number"
+            inputmode="decimal"
+            step="any"
+            value="1273.22"
+          />
+        </div>
+        <div class="input-group">
+          <label>指定轉移面積 (Target)</label>
+          <input
+            id="transfer"
+            type="number"
+            inputmode="decimal"
+            step="any"
+            value="1000"
+          />
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button id="calc">計算方案</button>
+        <button id="clear" class="secondary">清空</button>
+      </div>
+      <div id="msg" class="msg-box"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin: 0 0 8px; font-size: 1.1rem">
+        建議方案 (按合計誤差排序)
+      </h3>
+      <p class="info-text">
+        分母 ≤ 10000 (10倍數) | 轉移 ≥ 指定 | ≤1000 優先，再來 >1000 |
+        依合計持有精確度排序
+      </p>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>方案</th>
+              <th>轉移持分</th>
+              <th>最終轉移面積</th>
+              <th>剩餘持分</th>
+              <th>剩餘面積</th>
+              <th>合計持有</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        const $ = (id) => document.getElementById(id);
+        const fmt = (x) => (isFinite(x) ? Number(x).toFixed(6) : "0.000000");
+
+        function compute() {
+          const total = Number($("total").value);
+          const owned = Number($("owned").value);
+          const target = Number($("transfer").value);
+          const msg = $("msg");
+          const tbody = $("rows");
+
+          msg.textContent = "";
+          msg.className = "msg-box";
+          tbody.innerHTML = "";
+
+          if (!(total > 0) || owned < 0 || target < 0) {
+            msg.textContent = "請輸入正確的數值。";
+            msg.className = "msg-box err";
+            return;
+          }
+
+          const originalRatio = owned / total;
+          const targetRatio = target / total;
+          const cands = [];
+
+          for (let q = 10; q <= 10000; q += 10) {
+            let K = Math.round(originalRatio * q);
+            let currentTotalArea = (K / q) * total;
+            const totalErr = Math.abs(currentTotalArea - owned);
+
+            let a = Math.ceil(targetRatio * q - 1e-12);
+            if (a > K) continue;
+
+            let b = K - a;
+            let areaA = (a / q) * total;
+            let areaB = (b / q) * total;
+
+            cands.push({
+              q,
+              a,
+              b,
+              areaA,
+              areaB,
+              sumArea: areaA + areaB,
+              totalErr,
+              transferErr: areaA - target,
+            });
+          }
+
+          cands.sort((x, y) => {
+            const gx = x.q <= 1000 ? 0 : 1;
+            const gy = y.q <= 1000 ? 0 : 1;
+            if (gx !== gy) return gx - gy;
+            if (Math.abs(x.totalErr - y.totalErr) > 1e-10)
+              return x.totalErr - y.totalErr;
+            return x.transferErr - y.transferErr;
+          });
+
+          if (cands.length === 0) {
+            msg.textContent = "找不到符合容差的方案。";
+            msg.className = "msg-box err";
+            return;
+          }
+
+          cands.slice(0, 20).forEach((c, idx) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>#${idx + 1}</td>
+              <td><code>${c.a}/${c.q}</code></td>
+              <td class="highlight">${fmt(c.areaA)}</td>
+              <td><code>${c.b}/${c.q}</code></td>
+              <td>${fmt(c.areaB)}</td>
+              <td style="color:#111; font-weight: 500;">${fmt(c.sumArea)}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+
+          msg.textContent = "計算完成。";
+        }
+
+        $("calc").addEventListener("click", compute);
+        $("clear").addEventListener("click", () => {
+          ["total", "owned", "transfer"].forEach((id) => ($(id).value = ""));
+          $("rows").innerHTML = "";
+          $("msg").textContent = "";
+        });
+
+        compute();
+      })();
+    </script>
+  </body>
+</html>
